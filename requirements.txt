@@ -1,0 +1,7 @@
+mcp[cli]
+httpx
+python-dotenv
+pydantic
+sqlglot
+pytest
+openai    
