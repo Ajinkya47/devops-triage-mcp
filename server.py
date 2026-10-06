@@ -2,6 +2,10 @@ import os
 import httpx
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+import re
+import sqlite3
+from contextlib import closing
+from pathlib import Path
 
 import sys
 
@@ -16,6 +20,38 @@ print("TOKEN LOADED:", bool(token), file=sys.stderr)   # temporary debug line
 HEADERS = {"Accept": "application/vnd.github+json"}
 if token:
     HEADERS["Authorization"] = f"Bearer {token}"
+
+
+DB_PATH = Path(__file__).parent / "bugs.db"
+REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+def init_db() -> None:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS issues (
+            repo          TEXT NOT NULL,
+            number        INTEGER NOT NULL,
+            title         TEXT NOT NULL,
+            state         TEXT NOT NULL,
+            author        TEXT,
+            reactions     INTEGER DEFAULT 0,
+            comments      INTEGER DEFAULT 0,
+            created_at    TEXT,
+            updated_at    TEXT,
+            url           TEXT,
+            body_excerpt  TEXT,
+            PRIMARY KEY (repo, number)
+        );
+        CREATE TABLE IF NOT EXISTS issue_labels (
+            repo   TEXT NOT NULL,
+            number INTEGER NOT NULL,
+            label  TEXT NOT NULL,
+            PRIMARY KEY (repo, number, label)
+        );
+        """)
+        conn.commit()
+
+init_db()
 
 
 @mcp.tool()
@@ -157,6 +193,61 @@ Output a triage agenda with these sections:
 
 For each issue include: number, one-line summary, severity, and the evidence behind it.
 Do not take any write action. Only suggest next steps."""
+
+
+@mcp.tool()
+async def sync_issues(repo: str, state: str = "open", limit: int = 50) -> dict:
+    """Fetch issues from GitHub and store them in the local bugs database.
+
+    Run this before query_bugs_db. Re-running updates existing rows.
+
+    Args:
+        repo: Repository in 'owner/name' format, e.g. 'langchain-ai/langgraph'
+        state: 'open', 'closed', or 'all'
+        limit: Max issues to fetch (1-100)
+    """
+    if not REPO_PATTERN.match(repo):
+        raise ValueError("repo must look like 'owner/name'")
+    if state not in ("open", "closed", "all"):
+        raise ValueError("state must be 'open', 'closed', or 'all'")
+    limit = max(1, min(limit, 100))
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.get(
+            f"{GITHUB_API}/repos/{repo}/issues",
+            headers=HEADERS,
+            params={"state": state, "per_page": limit},
+        )
+        r.raise_for_status()
+
+    issues = [i for i in r.json() if "pull_request" not in i]
+
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        for i in issues:
+            conn.execute(
+                """INSERT OR REPLACE INTO issues
+                   (repo, number, title, state, author, reactions, comments,
+                    created_at, updated_at, url, body_excerpt)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    repo, i["number"], i["title"], i["state"],
+                    (i.get("user") or {}).get("login"),
+                    i["reactions"]["total_count"], i["comments"],
+                    i["created_at"], i["updated_at"], i["html_url"],
+                    (i["body"] or "")[:500],
+                ),
+            )
+            conn.execute(
+                "DELETE FROM issue_labels WHERE repo = ? AND number = ?",
+                (repo, i["number"]),
+            )
+            conn.executemany(
+                "INSERT OR IGNORE INTO issue_labels (repo, number, label) VALUES (?, ?, ?)",
+                [(repo, i["number"], l["name"]) for l in i["labels"]],
+            )
+        conn.commit()
+
+    return {"repo": repo, "synced": len(issues), "db": DB_PATH.name}
 
 
 if __name__ == "__main__":
