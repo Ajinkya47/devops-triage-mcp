@@ -4,4 +4,4 @@ python-dotenv
 pydantic
 sqlglot
 pytest
-openai    
+openai        # use Groq through its OpenAI-compatible endpoint
