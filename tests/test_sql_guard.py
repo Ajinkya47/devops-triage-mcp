@@ -11,6 +11,7 @@ GOOD_QUERIES = [
     "ON i.repo = l.repo AND i.number = l.number WHERE l.label = 'bug'",
     "select COUNT(*) from issues",
     "SELECT * FROM issues LIMIT 5",
+    "SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) FROM issues GROUP BY month",
 ]
 
 @pytest.mark.parametrize("sql", GOOD_QUERIES)
@@ -44,6 +45,11 @@ BAD_QUERIES = [
     "",
     "   ",
     "SELEC * FROM issues",
+    "SELECT load_extension('evil.dll')",
+    "SELECT * FROM pragma_table_info('issues')",
+    "SELECT randomblob(1000000000)",
+    "SELECT zeroblob(1000000000)",
+    "SELECT unknown_func(1) FROM issues",
 ]
 
 @pytest.mark.parametrize("sql", BAD_QUERIES)

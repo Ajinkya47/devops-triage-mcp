@@ -4,6 +4,15 @@ from sqlglot import exp
 ALLOWED_TABLES = {"issues", "issue_labels"}
 MAX_LIMIT = 100
 
+BLOCKED_FUNCTIONS = {
+    "load_extension", "readfile", "writefile",
+    "randomblob", "zeroblob", "edit", "fts3_tokenizer",
+}
+SAFE_UNKNOWN_FUNCTIONS = {
+    "strftime", "julianday", "date", "datetime",
+    "ifnull", "instr", "group_concat",
+}
+
 
 class UnsafeSQLError(ValueError):
     pass
@@ -34,6 +43,17 @@ def validate_sql(sql: str) -> str:
     for node in tree.walk():
         if isinstance(node, forbidden):
             raise UnsafeSQLError(f"Forbidden operation: {type(node).__name__}")
+
+
+    # Function checks: block dangerous names, and unknown functions not on the safe list
+    for node in tree.walk():
+        if isinstance(node, exp.Anonymous):
+            name = node.name.lower()
+            if name in BLOCKED_FUNCTIONS or name not in SAFE_UNKNOWN_FUNCTIONS:
+                raise UnsafeSQLError(f"Function not allowed: {node.name}")
+        elif isinstance(node, exp.Func):
+            if node.sql_name().lower() in BLOCKED_FUNCTIONS:
+                raise UnsafeSQLError(f"Function not allowed: {node.sql_name()}")
 
     # Only allow our own tables
     for table in tree.find_all(exp.Table):
