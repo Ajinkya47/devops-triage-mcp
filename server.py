@@ -17,7 +17,6 @@ mcp = FastMCP("devops-triage")
 GITHUB_API = "https://api.github.com"
 
 token = os.getenv("GITHUB_TOKEN")
-print("TOKEN LOADED:", bool(token), file=sys.stderr)   # temporary debug line
 
 HEADERS = {"Accept": "application/vnd.github+json"}
 if token:
