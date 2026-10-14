@@ -15,6 +15,7 @@ from issue_shaping import shape_issue_summary, shape_issue_detail, scan_rows
 from evidence import assess_evidence
 from duplicates import find_similar
 from sanitize import sanitize_issue_text
+from audit import audited
 
 load_dotenv()
 mcp = FastMCP("devops-triage")
@@ -61,6 +62,7 @@ init_db()
 
 
 @mcp.tool()
+@audited
 async def list_issues(
     repo: str,
     state: str = "open",
@@ -122,6 +124,7 @@ async def list_issues(
     ]
 
 @mcp.tool()
+@audited
 async def get_issue(repo: str, number: int, max_comments: int = 10) -> dict:
     """Get one GitHub issue with its body and recent comments (read-only).
 
@@ -166,6 +169,7 @@ async def get_issue(repo: str, number: int, max_comments: int = 10) -> dict:
         return shape_issue_detail(issue.json(), comments.json())
 
 @mcp.tool()
+@audited
 async def assess_issue(repo: str, number: int) -> dict:
     """Score how well-supported a GitHub issue is (read-only).
 
@@ -200,6 +204,7 @@ async def assess_issue(repo: str, number: int) -> dict:
     return result
 
 @mcp.tool()
+@audited
 def find_duplicates(repo: str, number: int, top_n: int = 5) -> dict:
     """Find issues in the local database that look similar to a given issue.
 
@@ -326,6 +331,7 @@ Do not take any write action. Only suggest next steps."""
 
 
 @mcp.tool()
+@audited
 async def sync_issues(repo: str, state: str = "open", limit: int = 50) -> dict:
     """Fetch issues from GitHub and store them in the local bugs database.
 
@@ -385,6 +391,7 @@ QUERY_TIMEOUT_S = 3
 MAX_CELL_CHARS = 500
 
 @mcp.tool()
+@audited
 def query_bugs_db(sql: str) -> dict:
     """Run a read-only SELECT query on the local bugs database.
 
