@@ -99,34 +99,91 @@ def _result_chars(result) -> int | None:
         return None
 
 
-def record(tool: str, arguments: dict, status: str, started: float,
-           result=None, error: Exception | None = None) -> None:
-    """Write one audit row. Never raises: logging must not break the tool."""
-    try:
-        row = (
-            datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            SESSION_ID,
-            tool,
-            json.dumps(summarize_args(arguments), default=str),
-            status,
-            type(error).__name__ if error else None,
-            _clip(str(error), MAX_ERROR_CHARS) if error else None,
-            int((time.monotonic() - started) * 1000),
-            None if error else _result_chars(result),
-            "[]" if error else json.dumps(collect_injection_flags(result)),
+# def record(tool: str, arguments: dict, status: str, started: float,
+#            result=None, error: Exception | None = None) -> None:
+#     """Write one audit row. Never raises: logging must not break the tool."""
+#     try:
+#         row = (
+#             datetime.now(timezone.utc).isoformat(timespec="seconds"),
+#             SESSION_ID,
+#             tool,
+#             json.dumps(summarize_args(arguments), default=str),
+#             status,
+#             type(error).__name__ if error else None,
+#             _clip(str(error), MAX_ERROR_CHARS) if error else None,
+#             int((time.monotonic() - started) * 1000),
+#             None if error else _result_chars(result),
+#             "[]" if error else json.dumps(collect_injection_flags(result)),
+#         )
+#         with closing(sqlite3.connect(AUDIT_DB, timeout=3)) as conn:
+#             conn.execute(SCHEMA)
+#             conn.execute(
+#                 "INSERT INTO audit_log (ts, session_id, tool, args_json, status, "
+#                 "error_type, error_message, duration_ms, result_chars, injection_flags) "
+#                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+#                 row,
+#             )
+#             conn.commit()
+#     except Exception as exc:
+#         print(f"[audit] failed to write log: {type(exc).__name__}", file=sys.stderr)
+
+
+class AuditError(RuntimeError):
+    """The audit row could not be written."""
+
+
+def _build_row(tool, arguments, status, started, result=None, error=None):
+    return (
+        datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        SESSION_ID,
+        tool,
+        json.dumps(summarize_args(arguments), default=str),
+        status,
+        type(error).__name__ if error else None,
+        _clip(str(error), MAX_ERROR_CHARS) if error else None,
+        int((time.monotonic() - started) * 1000),
+        None if error else _result_chars(result),
+        "[]" if error else json.dumps(collect_injection_flags(result)),
+    )
+
+
+def _write_row(row) -> None:
+    with closing(sqlite3.connect(AUDIT_DB, timeout=3)) as conn:
+        conn.execute(SCHEMA)
+        conn.execute(
+            "INSERT INTO audit_log (ts, session_id, tool, args_json, status, "
+            "error_type, error_message, duration_ms, result_chars, injection_flags) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            row,
         )
-        with closing(sqlite3.connect(AUDIT_DB, timeout=3)) as conn:
-            conn.execute(SCHEMA)
-            conn.execute(
-                "INSERT INTO audit_log (ts, session_id, tool, args_json, status, "
-                "error_type, error_message, duration_ms, result_chars, injection_flags) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                row,
-            )
-            conn.commit()
+        conn.commit()
+
+
+def record(tool, arguments, status, started, result=None, error=None) -> None:
+    """Fail-open: used for read tools. Never raises."""
+    try:
+        _write_row(_build_row(tool, arguments, status, started, result, error))
     except Exception as exc:
         print(f"[audit] failed to write log: {type(exc).__name__}", file=sys.stderr)
 
+
+def record_strict(tool, arguments, status, started, result=None, error=None) -> None:
+    """Fail-closed: used before any write. Raises AuditError if the row cannot be saved."""
+    try:
+        _write_row(_build_row(tool, arguments, status, started, result, error))
+    except Exception as exc:
+        raise AuditError(
+            f"audit log unavailable ({type(exc).__name__}); nothing was sent") from None
+
+
+
+
+
+
+
+
+
+    
 
 def audited(func):
     """Log every call to the wrapped tool (works for sync and async functions)."""
