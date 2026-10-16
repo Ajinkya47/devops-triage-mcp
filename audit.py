@@ -77,6 +77,11 @@ def collect_injection_flags(result) -> list[str]:
                     for item in value:
                         if isinstance(item, dict) and isinstance(item.get("flags"), list):
                             found.update(f for f in item["flags"] if isinstance(f, str))
+                elif key == "risk_flags" and isinstance(value, list):
+                    found.update(
+                        v.split(":", 1)[1] for v in value
+                        if isinstance(v, str) and v.startswith("injection:") and len(v) > 10
+                    )
                 else:
                     walk(value, depth + 1)
         elif isinstance(obj, list):

@@ -142,3 +142,8 @@ def test_signature_is_preserved_for_mcp():
     assert inspect.signature(wrapped) == inspect.signature(original)
     assert wrapped.__doc__ == original.__doc__
     assert wrapped.__name__ == "original"
+
+def test_risk_flags_injection_prefix_is_collected():
+    result = {"risk_flags": ["injection:ignore_instructions", "contains_link",
+                             "mentions_neutralized"]}
+    assert audit.collect_injection_flags(result) == ["ignore_instructions"]
