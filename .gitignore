@@ -5,3 +5,4 @@ __pycache__/
 bugs.db
 actions.db
 .env.write
+.env.agent

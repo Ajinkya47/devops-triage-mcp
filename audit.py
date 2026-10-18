@@ -9,8 +9,12 @@ import uuid
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
+import os
 
-AUDIT_DB = Path(__file__).parent / "audit.db"
+# AUDIT_DB = Path(__file__).parent / "audit.db"
+
+AUDIT_DB = Path(os.getenv("AUDIT_DB_PATH") or Path(__file__).parent / "audit.db").resolve()
+
 SESSION_ID = uuid.uuid4().hex[:12]
 MAX_ARG_CHARS = 200
 MAX_ERROR_CHARS = 200

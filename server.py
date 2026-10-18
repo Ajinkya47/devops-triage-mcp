@@ -32,7 +32,10 @@ if token:
     HEADERS["Authorization"] = f"Bearer {token}"
 
 
-DB_PATH = Path(__file__).parent / "bugs.db"
+# DB_PATH = Path(__file__).parent / "bugs.db"
+
+DB_PATH = Path(os.getenv("BUGS_DB_PATH") or Path(__file__).parent / "bugs.db").resolve()
+
 REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 def init_db() -> None:

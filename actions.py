@@ -11,7 +11,9 @@ from pathlib import Path
 
 from sanitize import detect_injection
 
-ACTIONS_DB = Path(__file__).parent / "actions.db"
+# ACTIONS_DB = Path(__file__).parent / "actions.db"
+
+ACTIONS_DB = Path(os.getenv("ACTIONS_DB_PATH") or Path(__file__).parent / "actions.db").resolve()
 
 STATUSES = {"pending", "approved", "executed", "failed", "rejected", "expired"}
 TOOL_COMMENT = "add_issue_comment"
