@@ -6,3 +6,5 @@ bugs.db
 actions.db
 .env.write
 .env.agent
+
+audit.db
