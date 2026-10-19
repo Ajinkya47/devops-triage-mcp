@@ -288,3 +288,17 @@ def test_real_propose_comment_is_refused_in_read_mode():
     with pytest.raises(ToolRefused):
         tb.prepare_call("propose_comment",
                         '{"repo": "a/b", "number": 1, "text": "hi"}', exposed)
+
+
+
+def test_parse_json_blocks():
+    assert tb.parse_json_blocks('{"a": 1}') == [{"a": 1}]
+    assert tb.parse_json_blocks('{"a": 1}\n{"b": 2}') == [{"a": 1}, {"b": 2}]
+    assert tb.parse_json_blocks("[1, 2]") == [[1, 2]]
+    assert tb.parse_json_blocks("plain text") == []
+    assert tb.parse_json_blocks("") == []
+
+def test_flags_are_found_in_results_with_one_json_block_per_item():
+    text = ('{"title": "a", "injection_flags": ["role_override"]}\n'
+            '{"title": "b", "injection_flags": []}')
+    assert tb.shape_for_model(text)["injection_flags"] == ["role_override"]

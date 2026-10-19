@@ -212,16 +212,31 @@ def result_to_text(result) -> tuple:
         parts.append(text if isinstance(text, str) else "[non-text content omitted]")
     return ("\n".join(parts) or "[empty result]"), bool(getattr(result, "isError", False))
 
+def parse_json_blocks(text: str) -> list:
+    """Parse one JSON document, or several given one per line. Anything else gives []."""
+    if not isinstance(text, str) or not text.strip():
+        return []
+    try:
+        return [json.loads(text)]
+    except ValueError:
+        pass
+    docs = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            docs.append(json.loads(line))
+        except ValueError:
+            continue
+    return docs
+
 
 def shape_for_model(text: str, is_error: bool = False,
                     max_chars: int = DEFAULT_RESULT_CHARS) -> dict:
     """Cap the size of a result. Injection flags are always kept, even when text is cut."""
-    flags = []
-    try:
-        flags = [f for f in collect_injection_flags(json.loads(text))
-                 if isinstance(f, str) and _FLAG_NAME.match(f)]
-    except ValueError:
-        pass
+    flags = [f for f in collect_injection_flags(parse_json_blocks(text))
+             if isinstance(f, str) and _FLAG_NAME.match(f)]
 
     full_len = len(text)
     truncated = full_len > max_chars

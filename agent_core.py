@@ -21,7 +21,7 @@ NUDGE_MALFORMED = ("Your last tool call was malformed. Call the tool again with 
 class Limits:
     max_steps: int = 8                 # model calls, including the final answer
     max_tool_calls: int = 12
-    max_calls_per_step: int = 4
+    max_calls_per_step: int = 6
     max_total_tokens: int = 30000      # prompt + completion, summed over the run
     max_seconds: float = 240.0
     max_result_chars: int = 4000
@@ -56,6 +56,7 @@ class RunResult:
     proposals: list = field(default_factory=list)
     injection_flags_seen: list = field(default_factory=list)
     unverified_claims: list = field(default_factory=list)
+    ungrounded_refs: list = field(default_factory=list)
     elapsed: float = 0.0
 
     @property
@@ -69,6 +70,7 @@ class _Counters:
         self.executed = 0
         self.proposal_attempts = 0
         self.repeat_refusals = 0
+        self.looked_at: set = set()
 
 
 # ------------------------------------------------------------------ helpers
@@ -150,14 +152,79 @@ def check_claims(answer: str) -> list:
     return claims[:5]
 
 
+
+_REF = re.compile(r"#(\d{1,7})\b")
+
+
+def check_references(answer: str, looked_at: set) -> list:
+    """Issue numbers mentioned in the answer that no tool result ever showed."""
+    known = {number for _, number in looked_at}
+    mentioned = {int(m) for m in _REF.findall(answer or "")}
+    return sorted(mentioned - known)[:10]
+
+
+def _items(docs):
+    for doc in docs:
+        if isinstance(doc, list):
+            yield from (d for d in doc if isinstance(d, dict))
+        elif isinstance(doc, dict):
+            inner = doc.get("result")
+            if isinstance(inner, list):
+                yield from (d for d in inner if isinstance(d, dict))
+            else:
+                yield doc
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def note_seen(name: str, arguments: dict, docs: list, looked_at: set) -> None:
+    """Remember which issues the model has actually seen in this run."""
+    repo = str(arguments.get("repo") or "").lower()
+
+    if name in ("get_issue", "assess_issue", "find_duplicates") and repo:
+        if _is_number(arguments.get("number")):
+            looked_at.add((repo, arguments["number"]))
+        if name == "find_duplicates":
+            for doc in docs:
+                matches = doc.get("matches") if isinstance(doc, dict) else None
+                for m in (matches if isinstance(matches, list) else []):
+                    if isinstance(m, dict) and _is_number(m.get("number")):
+                        looked_at.add((repo, m["number"]))
+
+    elif name == "list_issues" and repo:
+        for item in _items(docs):
+            if _is_number(item.get("number")):
+                looked_at.add((repo, item["number"]))
+
+    elif name == "query_bugs_db":
+        for doc in docs:
+            if not isinstance(doc, dict):
+                continue
+            columns, rows = doc.get("columns"), doc.get("rows")
+            if not (isinstance(columns, list) and isinstance(rows, list) and "number" in columns):
+                continue
+            n_idx = columns.index("number")
+            r_idx = columns.index("repo") if "repo" in columns else None
+            for row in rows:
+                if not isinstance(row, list) or n_idx >= len(row) or not _is_number(row[n_idx]):
+                    continue
+                row_repo = "*"
+                if r_idx is not None and r_idx < len(row):
+                    row_repo = str(row[r_idx]).lower()
+                looked_at.add((row_repo, row[n_idx]))
+
+
 # ------------------------------------------------------------------- pacing
 
 class Pacer:
-    """Waits for the token window to refill instead of running into rate-limit errors."""
+    """Waits only as long as the token window needs to refill enough for the next call."""
 
     def __init__(self, safety_tokens: int = 300, max_wait: float = 65.0):
         self.remaining: int | None = None
         self.reset: float | None = None
+        self.limit: int | None = None
         self.safety = safety_tokens
         self.max_wait = max_wait
 
@@ -165,11 +232,21 @@ class Pacer:
         if reply.remaining_tokens is not None:
             self.remaining = reply.remaining_tokens
             self.reset = reply.reset_seconds
+            self.limit = getattr(reply, "limit_tokens", None)
 
     def wait_needed(self, needed_tokens: int) -> float:
-        if self.remaining is None or self.remaining >= needed_tokens + self.safety:
+        if self.remaining is None:
             return 0.0
-        return min((self.reset if self.reset is not None else 5.0) + 0.5, self.max_wait)
+        shortfall = needed_tokens + self.safety - self.remaining
+        if shortfall <= 0:
+            return 0.0
+        full_refill = self.reset if self.reset is not None else 5.0
+        wait = full_refill
+        if self.limit and self.reset and self.reset > 0 and self.limit > self.remaining:
+            rate = (self.limit - self.remaining) / self.reset      # tokens refilled per second
+            if rate > 0:
+                wait = min(full_refill, shortfall / rate)
+        return min(wait + 0.5, self.max_wait)
 
     def waited(self) -> None:
         self.remaining = None
@@ -200,9 +277,17 @@ async def _handle_call(call, *, exposed, call_tool, limits, counters, result, fl
     if key in counters.seen:
         counters.repeat_refusals += 1
         return refuse("You already made this exact call. Use its earlier result or try something different.")
+
+    is_proposal = prepared.name in tb.PROPOSE_TOOLS
+    if is_proposal:
+        repo = str(prepared.arguments.get("repo", "")).lower()
+        number = prepared.arguments.get("number")
+        if (repo, number) not in counters.looked_at and ("*", number) not in counters.looked_at:
+            return refuse(f"You have not looked at issue #{number} of {_clip(repo, 60)} in this run. "
+                          "Find it with list_issues or get_issue first. Never guess an issue number.")
+
     if counters.executed >= limits.max_tool_calls:
         return refuse("Tool call limit reached. Answer with what you have.")
-    is_proposal = prepared.name in tb.PROPOSE_TOOLS
     if is_proposal and counters.proposal_attempts >= limits.max_proposals:
         return refuse("Proposal limit reached for this run.")
 
@@ -217,6 +302,9 @@ async def _handle_call(call, *, exposed, call_tool, limits, counters, result, fl
         raw_text, is_error = f"tool call failed ({type(exc).__name__})", True
     if is_error:
         counters.seen.discard(key)                  # one retry after an error is allowed
+    else:
+        note_seen(prepared.name, prepared.arguments, tb.parse_json_blocks(raw_text),
+                  counters.looked_at)
 
     shaped = tb.shape_for_model(raw_text, is_error, limits.max_result_chars)
     entry.update(status="error" if is_error else "ok", chars=shaped["chars"],
@@ -232,7 +320,6 @@ async def _handle_call(call, *, exposed, call_tool, limits, counters, result, fl
     if prepared.clamped:
         text = f"[host note: {', '.join(prepared.clamped)} adjusted to save tokens]\n" + text
     return text
-
 
 # ----------------------------------------------------------------- the loop
 
@@ -373,5 +460,6 @@ async def run_agent(request, *, llm, call_tool, exposed, system_prompt, limits=N
 
     result.injection_flags_seen = sorted(flags_seen)
     result.unverified_claims = check_claims(result.answer)
+    result.ungrounded_refs = check_references(result.answer, counters.looked_at)
     result.elapsed = now() - started
     return result

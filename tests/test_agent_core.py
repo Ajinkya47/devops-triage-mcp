@@ -22,6 +22,9 @@ def _spec(name, props, required):
 
 
 ALL_SPECS = [
+    _spec("query_bugs_db", {"sql": {"type": "string"}}, ["sql"]),
+    _spec("find_duplicates", {"repo": {"type": "string"}, "number": {"type": "integer"},
+                              "top_n": {"type": "integer"}}, ["repo", "number"]),
     _spec("list_issues", {"repo": {"type": "string"}, "limit": {"type": "integer"}}, ["repo"]),
     _spec("assess_issue", {"repo": {"type": "string"}, "number": {"type": "integer"}},
           ["repo", "number"]),
@@ -198,29 +201,63 @@ def test_extra_calls_in_one_step_are_dropped():
 
 # ---------- Proposals ----------
 
+# def test_proposal_id_is_captured():
+#     llm = FakeLLM([reply(calls=[tc("propose_comment", propose("Please add logs"))]), reply("ok")])
+#     res = go(llm, Tools({"propose_comment": PENDING}), mode=tb.MODE_PROPOSE)
+#     assert res.proposals == ["c1711f12"]
+
+# def test_malformed_action_ids_are_ignored():
+#     bad = '{"action_id": "../../x", "status": "pending_human_approval"}'
+#     llm = FakeLLM([reply(calls=[tc("propose_comment", propose("hi"))]), reply("ok")])
+#     res = go(llm, Tools({"propose_comment": bad}), mode=tb.MODE_PROPOSE)
+#     assert res.proposals == []
+
+# def test_failed_proposal_is_not_recorded():
+#     llm = FakeLLM([reply(calls=[tc("propose_comment", propose("hi"))]), reply("ok")])
+#     tools = Tools({"propose_comment": ("Proposal refused: nope", True)})
+#     res = go(llm, tools, mode=tb.MODE_PROPOSE)
+#     assert res.proposals == [] and res.tool_calls[0]["status"] == "error"
+
+# def test_proposal_limit():
+#     calls = [tc("propose_comment", propose(f"note {i}"), f"c{i}") for i in range(3)]
+#     llm = FakeLLM([reply(calls=calls), reply("ok")])
+#     tools = Tools({"propose_comment": PENDING})
+#     res = go(llm, tools, mode=tb.MODE_PROPOSE, limits=core.Limits(max_proposals=2))
+#     assert len(tools.calls) == 2 and res.refused_calls == 1
+
+
+
+LOOK = tc("assess_issue", assess(1), "c0")
+
+
 def test_proposal_id_is_captured():
-    llm = FakeLLM([reply(calls=[tc("propose_comment", propose("Please add logs"))]), reply("ok")])
+    llm = FakeLLM([reply(calls=[LOOK]),
+                   reply(calls=[tc("propose_comment", propose("Please add logs"))]),
+                   reply("ok")])
     res = go(llm, Tools({"propose_comment": PENDING}), mode=tb.MODE_PROPOSE)
     assert res.proposals == ["c1711f12"]
 
 def test_malformed_action_ids_are_ignored():
     bad = '{"action_id": "../../x", "status": "pending_human_approval"}'
-    llm = FakeLLM([reply(calls=[tc("propose_comment", propose("hi"))]), reply("ok")])
+    llm = FakeLLM([reply(calls=[LOOK]),
+                   reply(calls=[tc("propose_comment", propose("hi"))]), reply("ok")])
     res = go(llm, Tools({"propose_comment": bad}), mode=tb.MODE_PROPOSE)
     assert res.proposals == []
 
 def test_failed_proposal_is_not_recorded():
-    llm = FakeLLM([reply(calls=[tc("propose_comment", propose("hi"))]), reply("ok")])
+    llm = FakeLLM([reply(calls=[LOOK]),
+                   reply(calls=[tc("propose_comment", propose("hi"))]), reply("ok")])
     tools = Tools({"propose_comment": ("Proposal refused: nope", True)})
     res = go(llm, tools, mode=tb.MODE_PROPOSE)
-    assert res.proposals == [] and res.tool_calls[0]["status"] == "error"
+    assert res.proposals == [] and res.tool_calls[1]["status"] == "error"
 
 def test_proposal_limit():
     calls = [tc("propose_comment", propose(f"note {i}"), f"c{i}") for i in range(3)]
-    llm = FakeLLM([reply(calls=calls), reply("ok")])
+    llm = FakeLLM([reply(calls=[LOOK]), reply(calls=calls), reply("ok")])
     tools = Tools({"propose_comment": PENDING})
     res = go(llm, tools, mode=tb.MODE_PROPOSE, limits=core.Limits(max_proposals=2))
-    assert len(tools.calls) == 2 and res.refused_calls == 1
+    proposed = [c for c in tools.calls if c[0] == "propose_comment"]
+    assert len(proposed) == 2 and res.refused_calls == 1
 
 
 # ---------- Limits and wrap-up ----------
@@ -435,3 +472,95 @@ def test_agent_code_has_no_approval_path():
             assert forbidden not in source, f"{path.name} mentions {forbidden}"
         assert not re.search(r"^\s*(?:import|from)\s+(?:approve|executor)\b",
                              source, re.MULTILINE), f"{path.name} imports the approval code"
+
+
+# ---------- Proposals must be about issues the agent has seen ----------
+
+def test_proposal_without_looking_is_refused_and_not_sent():
+    llm = FakeLLM([reply(calls=[tc("propose_comment", propose("hi", 123))]), reply("ok")])
+    tools = Tools({"propose_comment": PENDING})
+    res = go(llm, tools, mode=tb.MODE_PROPOSE)
+    message = llm.calls[1]["messages"][-1]["content"]
+    assert tools.calls == [] and res.proposals == [] and res.refused_calls == 1
+    assert message.startswith("REFUSED:") and "#123" in message
+    assert "never guess" in message.lower()
+
+def test_proposal_for_a_different_issue_than_the_one_seen_is_refused():
+    llm = FakeLLM([reply(calls=[LOOK]),
+                   reply(calls=[tc("propose_comment", propose("hi", 2))]), reply("ok")])
+    tools = Tools({"propose_comment": PENDING})
+    res = go(llm, tools, mode=tb.MODE_PROPOSE)
+    assert [c[0] for c in tools.calls] == ["assess_issue"] and res.proposals == []
+
+def test_proposal_after_a_list_is_allowed():
+    listing = json.dumps([{"number": 3, "title": "x"}, {"number": 4, "title": "y"}])
+    llm = FakeLLM([reply(calls=[tc("list_issues", LIST, "c0")]),
+                   reply(calls=[tc("propose_comment", propose("hi", 3))]), reply("ok")])
+    tools = Tools({"list_issues": listing, "propose_comment": PENDING})
+    assert go(llm, tools, mode=tb.MODE_PROPOSE).proposals == ["c1711f12"]
+
+def test_list_results_with_one_block_per_item_are_understood():
+    blocks = '{"number": 3, "title": "x"}\n{"number": 4, "title": "y"}'
+    llm = FakeLLM([reply(calls=[tc("list_issues", LIST, "c0")]),
+                   reply(calls=[tc("propose_comment", propose("hi", 4))]), reply("ok")])
+    tools = Tools({"list_issues": blocks, "propose_comment": PENDING})
+    assert go(llm, tools, mode=tb.MODE_PROPOSE).proposals == ["c1711f12"]
+
+def test_list_results_wrapped_in_a_result_key_are_understood():
+    llm = FakeLLM([reply(calls=[tc("list_issues", LIST, "c0")]),
+                   reply(calls=[tc("propose_comment", propose("hi", 7))]), reply("ok")])
+    tools = Tools({"list_issues": '{"result": [{"number": 7}]}', "propose_comment": PENDING})
+    assert go(llm, tools, mode=tb.MODE_PROPOSE).proposals == ["c1711f12"]
+
+def test_query_rows_with_a_number_column_count_as_seen():
+    rows = json.dumps({"columns": ["number", "title"], "rows": [[5, "x"]]})
+    llm = FakeLLM([reply(calls=[tc("query_bugs_db", {"sql": "SELECT number, title FROM issues"}, "c0")]),
+                   reply(calls=[tc("propose_comment", propose("hi", 5))]), reply("ok")])
+    tools = Tools({"query_bugs_db": rows, "propose_comment": PENDING})
+    assert go(llm, tools, mode=tb.MODE_PROPOSE).proposals == ["c1711f12"]
+
+
+# ---------- Claims about issues the agent never saw ----------
+
+def test_check_references():
+    seen = {("me/r", 1), ("*", 2)}
+    assert core.check_references("Issue #1 and #2 are fine; #123 is not.", seen) == [123]
+    assert core.check_references("", seen) == []
+    assert core.check_references("No numbers here", seen) == []
+
+def test_run_reports_ungrounded_references():
+    res = go(FakeLLM([reply("Issue #123 is moderate.")]), Tools())
+    assert res.ungrounded_refs == [123]
+
+def test_grounded_references_are_not_reported():
+    llm = FakeLLM([reply(calls=[LOOK]), reply("Issue #1 has weak evidence.")])
+    assert go(llm, Tools()).ungrounded_refs == []
+
+def test_duplicate_matches_count_as_seen():
+    dup = json.dumps({"matches": [{"number": 8, "verdict": "likely_duplicate"}]})
+    llm = FakeLLM([reply(calls=[tc("find_duplicates", {"repo": REPO, "number": 1}, "c0")]),
+                   reply("It matches #8 and #1.")])
+    assert go(llm, Tools({"find_duplicates": dup})).ungrounded_refs == []
+
+
+# ---------- Pacing ----------
+
+def test_pacer_waits_only_for_the_shortfall():
+    p = core.Pacer(safety_tokens=300)
+    p.note(LLMReply(remaining_tokens=2800, reset_seconds=39.0, limit_tokens=8000))
+    assert p.wait_needed(3200) == pytest.approx(5.75)
+
+def test_pacer_never_waits_longer_than_a_full_refill():
+    p = core.Pacer(safety_tokens=300)
+    p.note(LLMReply(remaining_tokens=0, reset_seconds=60.0, limit_tokens=8000))
+    assert p.wait_needed(9000) == pytest.approx(60.5)
+
+def test_pacer_without_the_limit_header_falls_back_to_the_reset_time():
+    p = core.Pacer()
+    p.note(LLMReply(remaining_tokens=100, reset_seconds=3.0))
+    assert p.wait_needed(1000) == pytest.approx(3.5)
+
+def test_pacer_does_not_wait_when_there_is_room():
+    p = core.Pacer()
+    p.note(LLMReply(remaining_tokens=7000, reset_seconds=1.0, limit_tokens=8000))
+    assert p.wait_needed(1000) == 0.0

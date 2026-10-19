@@ -143,3 +143,13 @@ def test_cli_flags():
 
 def test_cli_without_a_request_means_chat_mode():
     assert agent.build_parser().parse_args([]).request is None
+
+
+def test_summary_shows_ungrounded_references():
+    out = ui.format_run_summary(make_result(ungrounded_refs=[123]))
+    assert "WARNINGS" in out and "#123" in out
+
+def test_bare_quit_and_exit_are_commands():
+    assert ui.parse_command("quit") == ("quit", "")
+    assert ui.parse_command("  EXIT ") == ("quit", "")
+    assert ui.parse_command("hello") is None

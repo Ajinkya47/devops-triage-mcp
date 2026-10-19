@@ -45,6 +45,7 @@ class LLMReply:
     finish_reason: str = ""
     remaining_tokens: int | None = None
     reset_seconds: float | None = None
+    limit_tokens: int | None = None
 
 
 def parse_duration(text) -> float | None:
@@ -166,4 +167,5 @@ class ChatClient:
             finish_reason=str(choice.finish_reason or ""),
             remaining_tokens=_int(headers.get("x-ratelimit-remaining-tokens")),
             reset_seconds=parse_duration(headers.get("x-ratelimit-reset-tokens")),
+            limit_tokens=_int(headers.get("x-ratelimit-limit-tokens")),
         )

@@ -156,3 +156,9 @@ def test_no_choices_is_transient():
     body = {"id": "x", "object": "chat.completion", "created": 0, "model": "m", "choices": []}
     with pytest.raises(TransientError):
         client_with(lambda r: httpx.Response(200, json=body)).chat(MESSAGES)
+
+def test_limit_header_is_read():
+    def handler(request):
+        return httpx.Response(200, json=completion("hi"),
+                              headers={"x-ratelimit-limit-tokens": "8000"})
+    assert client_with(handler).chat(MESSAGES).limit_tokens == 8000
