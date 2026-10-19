@@ -19,6 +19,7 @@ from audit import audited
 
 import actions
 from actions import ActionError
+from batch_assess import MAX_BATCH, assess_many
 
 load_dotenv()
 mcp = FastMCP("devops-triage")
@@ -208,6 +209,38 @@ async def assess_issue(repo: str, number: int) -> dict:
     result = assess_evidence(issue_json, comments.json())
     result.update({"repo": repo, "number": number, "url": issue_json["html_url"]})
     return result
+
+
+@mcp.tool()
+@audited
+async def assess_issues(repo: str, numbers: list[int]) -> dict:
+    """Score the evidence for several GitHub issues in one call (read-only).
+
+    Per issue: evidence_score (0-100), evidence_level, signals_found,
+    independent_reporters, claimed_impact, flags, injection_flags. No issue
+    text is returned. Evidence is not severity: combine it with
+    claimed_impact. Prefer this over repeated assess_issue calls.
+
+    Args:
+        repo: Repository in 'owner/name' format
+        numbers: Up to 8 issue numbers
+    """
+    if not REPO_PATTERN.match(repo):
+        raise ValueError("repo must look like 'owner/name'")
+    if not isinstance(numbers, list) or not numbers:
+        raise ValueError("numbers must be a non-empty list of issue numbers")
+    clean = []
+    for n in numbers:
+        if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= 10_000_000:
+            raise ValueError("every issue number must be a positive integer")
+        if n not in clean:
+            clean.append(n)
+    if len(clean) > MAX_BATCH:
+        raise ValueError(f"at most {MAX_BATCH} issues per call")
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        results = await assess_many(client, GITHUB_API, HEADERS, repo, clean)
+    return {"repo": repo, "results": results}
 
 @mcp.tool()
 @audited

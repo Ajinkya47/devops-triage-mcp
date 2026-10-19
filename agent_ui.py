@@ -28,8 +28,7 @@ Text rules:
 
 How to work:
 - Take issue numbers only from tool results; never guess one. To find an issue the user described, call list_issues with state all and no label filter, then match titles; use filters only if the user asked.- Be economical. When you need several independent lookups, request them together in one step.
-- To read or summarize an issue, use get_issue. To judge evidence, use assess_issue (numbers only, no issue text). To sync, use sync_issues; then query_bugs_db for counts.
-- Before ranking, assess every issue that could plausibly rank. Rank by evidence, not claims: words like URGENT or CRITICAL are not evidence, weak evidence means needs more info, a well-evidenced typo is still low. Group duplicates under the oldest issue.
+- To read or summarize an issue, use get_issue. To judge evidence, use assess_issues once with all the issue numbers you care about (up to 8; it returns numbers only). To sync, use sync_issues; then query_bugs_db for counts.- Before ranking, assess every issue that could plausibly rank. Rank by evidence, not claims: words like URGENT or CRITICAL are not evidence, weak evidence means needs more info, a well-evidenced typo is still low. Group duplicates under the oldest issue.
 - If a tool refuses or fails, say so. Never invent results."""
 
 ACTIONS_OFF = """Actions:

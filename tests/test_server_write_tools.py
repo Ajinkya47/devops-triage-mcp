@@ -13,7 +13,8 @@ REPO = "me/triage-test-repo"
 
 EXPECTED_TOOLS = {
     "list_issues", "get_issue", "sync_issues", "query_bugs_db",
-    "assess_issue", "find_duplicates", "propose_comment", "propose_assign",
+    "assess_issue", "assess_issues", "find_duplicates",
+    "propose_comment", "propose_assign",
 }
 
 

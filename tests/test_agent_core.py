@@ -564,3 +564,53 @@ def test_pacer_does_not_wait_when_there_is_room():
     p = core.Pacer()
     p.note(LLMReply(remaining_tokens=7000, reset_seconds=1.0, limit_tokens=8000))
     assert p.wait_needed(1000) == 0.0
+
+
+def pretty(*items):
+    return "\n".join(json.dumps(i, indent=2) for i in items)
+
+def test_list_results_with_pretty_printed_blocks_are_understood():
+    listing = pretty({"number": 3, "title": "x"}, {"number": 5, "title": "y"})
+    llm = FakeLLM([reply(calls=[tc("list_issues", LIST, "c0")]),
+                   reply(calls=[tc("propose_comment", propose("hi", 5))]), reply("ok")])
+    tools = Tools({"list_issues": listing, "propose_comment": PENDING})
+    res = go(llm, tools, mode=tb.MODE_PROPOSE)
+    assert res.proposals == ["c1711f12"] and res.refused_calls == 0
+
+def test_injection_flags_in_pretty_printed_list_results_are_seen():
+    listing = pretty({"number": 1, "injection_flags": ["role_override"]},
+                     {"number": 2, "injection_flags": []})
+    llm = FakeLLM([reply(calls=[tc("list_issues", LIST, "c0")]), reply("ok")])
+    res = go(llm, Tools({"list_issues": listing}))
+    assert res.injection_flags_seen == ["role_override"]
+
+def test_numbers_the_user_wrote_are_not_reported_as_ungrounded():
+    assert core.check_references("I could not find #123.", set(), "comment on issue 123") == []
+
+def test_run_does_not_report_a_number_from_the_users_own_request():
+    res = go(FakeLLM([reply("I could not find issue #123.")]), Tools(),
+             request="Draft a comment on issue 123")
+    assert res.ungrounded_refs == []
+
+def test_invented_numbers_are_still_reported():
+    res = go(FakeLLM([reply("Issue #77 is moderate.")]), Tools(), request="rank the issues")
+    assert res.ungrounded_refs == [77]
+
+def test_batch_assessment_counts_as_looking_at_the_issues():
+    ALL_SPECS.append(_spec("assess_issues", {"repo": {"type": "string"},
+                                            "numbers": {"type": "array"}}, ["repo", "numbers"]))
+    try:
+        results = json.dumps({"repo": REPO, "results": [
+            {"number": 1, "evidence_score": 50}, {"number": 2, "error": "not found"}]})
+        llm = FakeLLM([
+            reply(calls=[tc("assess_issues", {"repo": REPO, "numbers": [1, 2]}, "c0")]),
+            reply(calls=[tc("propose_comment", propose("hi", 1), "c1"),
+                         tc("propose_comment", propose("hi", 2), "c2")]),
+            reply("ok")])
+        tools = Tools({"assess_issues": results, "propose_comment": PENDING})
+        res = go(llm, tools, mode=tb.MODE_PROPOSE)
+        proposed = [c for c in tools.calls if c[0] == "propose_comment"]
+        assert len(proposed) == 1 and proposed[0][1]["number"] == 1   # #2 was not found
+        assert res.refused_calls == 1
+    finally:
+        ALL_SPECS.pop()

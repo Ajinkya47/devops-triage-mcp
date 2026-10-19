@@ -156,11 +156,12 @@ def check_claims(answer: str) -> list:
 _REF = re.compile(r"#(\d{1,7})\b")
 
 
-def check_references(answer: str, looked_at: set) -> list:
-    """Issue numbers mentioned in the answer that no tool result ever showed."""
+def check_references(answer: str, looked_at: set, request: str = "") -> list:
+    """Issue numbers in the answer that no tool showed and the user did not write."""
     known = {number for _, number in looked_at}
+    written_by_user = {int(m) for m in re.findall(r"\d{1,7}", request or "")}
     mentioned = {int(m) for m in _REF.findall(answer or "")}
-    return sorted(mentioned - known)[:10]
+    return sorted(mentioned - known - written_by_user)[:10]
 
 
 def _items(docs):
@@ -197,6 +198,14 @@ def note_seen(name: str, arguments: dict, docs: list, looked_at: set) -> None:
         for item in _items(docs):
             if _is_number(item.get("number")):
                 looked_at.add((repo, item["number"]))
+
+    elif name == "assess_issues" and repo:
+        for doc in docs:
+            results = doc.get("results") if isinstance(doc, dict) else None
+            for item in (results if isinstance(results, list) else []):
+                if isinstance(item, dict) and _is_number(item.get("number")) \
+                        and "error" not in item:
+                    looked_at.add((repo, item["number"]))
 
     elif name == "query_bugs_db":
         for doc in docs:
@@ -460,6 +469,6 @@ async def run_agent(request, *, llm, call_tool, exposed, system_prompt, limits=N
 
     result.injection_flags_seen = sorted(flags_seen)
     result.unverified_claims = check_claims(result.answer)
-    result.ungrounded_refs = check_references(result.answer, counters.looked_at)
+    result.ungrounded_refs = check_references(result.answer, counters.looked_at, request)
     result.elapsed = now() - started
     return result

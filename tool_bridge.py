@@ -9,7 +9,7 @@ MODE_PROPOSE = "proposals"
 
 READ_TOOLS = frozenset({
     "list_issues", "get_issue", "sync_issues",
-    "query_bugs_db", "assess_issue", "find_duplicates",
+    "query_bugs_db", "assess_issue", "assess_issues", "find_duplicates",
 })
 PROPOSE_TOOLS = frozenset({"propose_comment", "propose_assign"})
 
@@ -213,22 +213,22 @@ def result_to_text(result) -> tuple:
     return ("\n".join(parts) or "[empty result]"), bool(getattr(result, "isError", False))
 
 def parse_json_blocks(text: str) -> list:
-    """Parse one JSON document, or several given one per line. Anything else gives []."""
+    """Parse any number of JSON documents written back to back, in any formatting."""
     if not isinstance(text, str) or not text.strip():
         return []
-    try:
-        return [json.loads(text)]
-    except ValueError:
-        pass
-    docs = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
+    decoder = json.JSONDecoder()
+    docs, i, n = [], 0, len(text)
+    while i < n:
+        while i < n and text[i].isspace():
+            i += 1
+        if i >= n:
+            break
         try:
-            docs.append(json.loads(line))
+            doc, end = decoder.raw_decode(text, i)
         except ValueError:
-            continue
+            break
+        docs.append(doc)
+        i = end
     return docs
 
 

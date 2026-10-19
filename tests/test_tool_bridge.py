@@ -302,3 +302,12 @@ def test_flags_are_found_in_results_with_one_json_block_per_item():
     text = ('{"title": "a", "injection_flags": ["role_override"]}\n'
             '{"title": "b", "injection_flags": []}')
     assert tb.shape_for_model(text)["injection_flags"] == ["role_override"]
+
+def test_parse_json_blocks_handles_pretty_printed_documents():
+    text = '{\n  "number": 3,\n  "title": "x"\n}\n{\n  "number": 4,\n  "title": "y"\n}'
+    assert tb.parse_json_blocks(text) == [{"number": 3, "title": "x"}, {"number": 4, "title": "y"}]
+
+def test_flags_are_found_in_pretty_printed_blocks():
+    text = ('{\n  "title": "a",\n  "injection_flags": [\n    "role_override"\n  ]\n}\n'
+            '{\n  "title": "b",\n  "injection_flags": []\n}')
+    assert tb.shape_for_model(text)["injection_flags"] == ["role_override"]
