@@ -77,6 +77,7 @@ async def build_template(repo: str, work: Path) -> Path:
         text, is_error = tb.result_to_text(result)
         if is_error:
             raise SystemExit(f"Could not sync the test repo: {ui.safe_text(text)[:200]}")
+            print(f"Template sync: {ui.safe_text(text)[:150]}")
     return folder / "bugs.db"
 
 
@@ -87,14 +88,29 @@ def build_world(db_path: Path, repo: str) -> dict:
                             (repo,)).fetchall()
     finally:
         conn.close()
+
     by_title = {title: number for number, title in rows}
+    print(f"Template database holds {len(rows)} issue(s) for {repo}.")
+    if not rows:
+        print("It is empty. Run scripts/debug_template.py to see why.")
+        raise SystemExit(2)
     missing = [i.title for i in ISSUES if i.title not in by_title]
     if missing:
-        print("These seed issues are missing from the repo:")
+        print(f"{len(missing)} seed issue(s) are not in the repo:")
         for title in missing:
             print(f"  - {title}")
         print(f"\nCreate them with:\n  uv run python scripts/seed_issues.py --repo {repo} --create --sync-bodies")
         raise SystemExit(2)
+
+    
+    # by_title = {title: number for number, title in rows}
+    # missing = [i.title for i in ISSUES if i.title not in by_title]
+    # if missing:
+    #     print("These seed issues are missing from the repo:")
+    #     for title in missing:
+    #         print(f"  - {title}")
+    #     print(f"\nCreate them with:\n  uv run python scripts/seed_issues.py --repo {repo} --create --sync-bodies")
+    #     raise SystemExit(2)
     return {"num": {i.key: by_title[i.title] for i in ISSUES}, "total": len(rows),
             "owner": repo.split("/")[0], "repo": repo}
 
