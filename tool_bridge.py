@@ -23,7 +23,7 @@ for _name in READ_TOOLS | PROPOSE_TOOLS:
 
 # Ceilings that keep results small. An argument that is missing gets the ceiling.
 CLAMPS = {
-    "list_issues": {"limit": 10},
+    "list_issues": {"limit": 20},
     "get_issue": {"max_comments": 3},
     "sync_issues": {"limit": 50},
     "find_duplicates": {"top_n": 5},

@@ -418,7 +418,7 @@ def test_argument_clamps_are_applied_and_reported():
     llm = FakeLLM([reply(calls=[tc("list_issues", {"repo": REPO})]), reply("ok")])
     tools = Tools()
     res = go(llm, tools)
-    assert tools.calls[0][1]["limit"] == 10
+    assert tools.calls[0][1]["limit"] == 20
     assert res.tool_calls[0]["clamped"] == ["limit"]
     assert "host note" in llm.calls[1]["messages"][-1]["content"]
 

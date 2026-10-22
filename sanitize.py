@@ -22,10 +22,18 @@ INJECTION_PATTERNS = {
         r"\b(?:reveal|show|print|repeat|output|leak)\b[^.]{0,30}"
         r"\b(?:system prompt|your instructions|hidden prompt|initial prompt)\b"
     ),
+    # "tool_invocation": re.compile(
+    #     r"\b(?:call|run|execute|invoke|use)\b[^.]{0,30}"
+    #     r"\b(?:add_issue_comment|assign_issue|create_triage_note|query_bugs_db|sync_issues)\b"
+    # ),
+
     "tool_invocation": re.compile(
         r"\b(?:call|run|execute|invoke|use)\b[^.]{0,30}"
-        r"\b(?:add_issue_comment|assign_issue|create_triage_note|query_bugs_db|sync_issues)\b"
+        r"\b(?:add_issue_comment|assign_issue|create_triage_note|query_bugs_db|sync_issues|"
+        r"propose_comment|propose_assign|assess_issues?|list_issues|get_issue|find_duplicates)\b"
     ),
+
+    
     "destructive_request": re.compile(
         r"\b(?:delete|drop|close|remove|wipe|erase)\s+(?:all|every|everything)\b[^.]{0,20}"
         r"\b(?:issues?|data|tables?|repos?|repositories|records?|database)\b"

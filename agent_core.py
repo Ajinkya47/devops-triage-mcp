@@ -24,7 +24,7 @@ class Limits:
     max_calls_per_step: int = 6
     max_total_tokens: int = 30000      # prompt + completion, summed over the run
     max_seconds: float = 240.0
-    max_result_chars: int = 4000
+    max_result_chars: int = 7000
     prompt_budget_tokens: int = 5500   # keeps prompt + reply under an 8,000-token minute
     max_proposals: int = 3
     max_repeat_refusals: int = 3

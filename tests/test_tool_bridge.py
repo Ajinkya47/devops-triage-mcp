@@ -196,11 +196,11 @@ def test_dict_arguments_are_accepted_too():
 
 def test_limit_is_lowered_to_the_ceiling():
     call = prep("list_issues", '{"repo": "a/b", "limit": 500}')
-    assert call.arguments["limit"] == 10 and "limit" in call.clamped
+    assert call.arguments["limit"] == 20 and "limit" in call.clamped
 
 def test_missing_limit_gets_the_ceiling():
     call = prep("list_issues", '{"repo": "a/b"}')
-    assert call.arguments["limit"] == 10 and "limit" in call.clamped
+    assert call.arguments["limit"] == 20 and "limit" in call.clamped
 
 def test_small_limit_is_kept():
     call = prep("list_issues", '{"repo": "a/b", "limit": 3}')
@@ -281,7 +281,7 @@ def test_real_tools_convert_cleanly():
 def test_real_list_issues_gets_a_clamped_limit():
     exposed = tb.select_tools(real_specs(), tb.MODE_READ)
     call = tb.prepare_call("list_issues", '{"repo": "a/b"}', exposed)
-    assert call.arguments["limit"] == 10
+    assert call.arguments["limit"] == 20
 
 def test_real_propose_comment_is_refused_in_read_mode():
     exposed = tb.select_tools(real_specs(), tb.MODE_READ)
