@@ -1,0 +1,1 @@
+![CI](https://github.com/Ajinkya47/devops-triage-mcp/actions/workflows/ci.yml/badge.svg)

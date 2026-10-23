@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: No secret or database files are tracked
+        run: |
+          if git ls-files | grep -E '(^|/)\.env|\.db$'; then
+            echo "A secret or database file is tracked"
+            exit 1
+          fi
+
+      - name: No token-shaped strings in the code
+        run: |
+          if git grep -nE 'ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{40,}|gsk_[A-Za-z0-9]{40,}' -- . ':!tests'; then
+            echo "Token-shaped string found"
+            exit 1
+          fi

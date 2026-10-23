@@ -222,6 +222,7 @@ async def amain(args) -> int:
                 if (t.id, r) not in done]
         print(f"{len(plan)} run(s) planned, {len(done)} already done\n")
 
+        stuck = 0
         for index, (task, repeat) in enumerate(plan, 1):
             if args.max_tokens and used >= args.max_tokens:
                 print(f"\nToken budget reached ({used:,}). Run again with --resume --out {out}")
@@ -235,6 +236,13 @@ async def amain(args) -> int:
             note = "" if s["passed"] else f"  <- {s['reason']}"
             print(f"[{index}/{len(plan)}] {task.id:<20} {'PASS' if s['passed'] else 'FAIL'}  "
                   f"{rec['total_tokens']:>6,} tok  {rec['elapsed']:>4.0f}s{note}")
+
+            stuck = stuck + 1 if rec["stop_reason"] in ("rate_limited", "provider_error") else 0
+            if stuck >= 2:
+                print("\nStopping: the provider keeps refusing requests (possibly a daily token limit).")
+                print(f"Finished runs are saved. Continue later with: --resume --out {out}")
+                break
+
             if index < len(plan):
                 await asyncio.sleep(args.cooldown)
     finally:
