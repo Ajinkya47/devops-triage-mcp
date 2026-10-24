@@ -61,10 +61,12 @@ def summarize_args(arguments: dict) -> dict:
             out[key] = _clip(value, MAX_ARG_CHARS)
         elif isinstance(value, (int, float, bool)) or value is None:
             out[key] = value
+        elif (isinstance(value, (list, tuple)) and len(value) <= 20
+              and all(isinstance(v, int) and not isinstance(v, bool) for v in value)):
+            out[key] = list(value)
         else:
             out[key] = f"<{type(value).__name__}>"
     return out
-
 
 def collect_injection_flags(result) -> list[str]:
     """Distinct injection flag names found anywhere in a tool result."""

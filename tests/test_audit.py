@@ -147,3 +147,12 @@ def test_risk_flags_injection_prefix_is_collected():
     result = {"risk_flags": ["injection:ignore_instructions", "contains_link",
                              "mentions_neutralized"]}
     assert audit.collect_injection_flags(result) == ["ignore_instructions"]
+
+
+def test_short_integer_lists_are_logged_in_full():
+    assert audit.summarize_args({"numbers": [1, 2, 3]}) == {"numbers": [1, 2, 3]}
+
+def test_other_lists_are_logged_as_a_type_name():
+    assert audit.summarize_args({"x": ["a", "b"]}) == {"x": "<list>"}
+    assert audit.summarize_args({"x": list(range(21))}) == {"x": "<list>"}
+    assert audit.summarize_args({"x": [True, 1]}) == {"x": "<list>"}
