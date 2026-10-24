@@ -128,8 +128,64 @@ def _describe_flag(flag) -> str:
         return "had @mentions, now wrapped so nobody is notified."
     return f"flag: {flag}"
 
+# ----------------------------------------------- checking where it will land
 
-def render_action(action: dict, dry_run: bool, now: float) -> str:
+def lookup_issue(repo, number, token=None, client=None) -> dict:
+    """Read-only look at the target issue, for the human's screen. Never raises."""
+    unavailable = {"status": "unavailable"}
+    if (not isinstance(repo, str) or not actions.REPO_RE.match(repo)
+            or any(part in (".", "..") for part in repo.split("/"))
+            or isinstance(number, bool) or not isinstance(number, int) or number < 1):
+        return unavailable
+
+    headers = {"Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    own = client is None
+    http = httpx.Client(timeout=10, follow_redirects=False) if own else client
+    try:
+        r = http.get(f"{GITHUB_API}/repos/{repo}/issues/{number}", headers=headers)
+    except httpx.HTTPError:
+        return unavailable
+    finally:
+        if own:
+            http.close()
+
+    if r.status_code == 404:
+        return {"status": "not_found"}
+    if r.status_code != 200:
+        return unavailable
+    try:
+        data = r.json()
+    except ValueError:
+        return unavailable
+    if not isinstance(data, dict):
+        return unavailable
+    return {"status": "ok", "title": str(data.get("title") or ""),
+            "state": str(data.get("state") or ""),
+            "is_pull_request": "pull_request" in data}
+
+
+def _target_lines(target) -> list:
+    if not isinstance(target, dict):
+        return []
+    status = target.get("status")
+    if status == "ok":
+        title = _safe(target.get("title", ""), 120).replace("\n", " ")
+        state = _safe(target.get("state", ""), 20)
+        pr = bool(target.get("is_pull_request"))
+        lines = [f" Title  : {title}  ({state} {'pull request' if pr else 'issue'})"]
+        if pr:
+            lines.append("  ! This target is a pull request, not an issue.")
+        return lines
+    if status == "not_found":
+        return [" Title  : (not found)",
+                "  ! No such issue was found. It may not exist, or your read token cannot see it."]
+    return [" Title  : (could not be checked)"]
+
+def render_action(action: dict, dry_run: bool, now: float, target=None) -> str:
     payload = action.get("payload") or {}
     secs = int(action.get("expires_at", 0) - now)
     expires = f"{secs // 60}m{secs % 60:02d}s left" if secs > 0 else "expired"
@@ -142,6 +198,7 @@ def render_action(action: dict, dry_run: bool, now: float) -> str:
         f" ACTION {_safe(action.get('id'))}  |  {_safe(action.get('tool'))}",
         line,
         f" Target : {_safe(action.get('repo'))}  issue #{_safe(action.get('number'))}",
+        *_target_lines(target),
         f" Status : {_safe(action.get('status'))} ({expires})",
         f" Mode   : {mode}",
     ]
@@ -159,7 +216,6 @@ def render_action(action: dict, dry_run: bool, now: float) -> str:
 
     out += ["", " This text came from an AI agent. If you did not expect it, reject it."]
     return "\n".join(out)
-
 
 def confirm_by_typing(screen: str, action_id: str, *, input_fn=input,
                       isatty=None, out=print) -> bool:
@@ -183,7 +239,7 @@ def _audit_args(action: dict, mode: str) -> dict:
 
 
 def process_approval(action_id, *, decided_by, dry_run, sender, confirm,
-                     settings=None, db_path=None, now=None) -> dict:
+                settings=None, db_path=None, now=None, lookup=None) -> dict:
     started = time.monotonic()
     now = time.time() if now is None else now
 
@@ -195,7 +251,12 @@ def process_approval(action_id, *, decided_by, dry_run, sender, confirm,
         raise ActionError(f"Action is {action['status']}, not pending")
 
     request = build_request(action)              # fails here, before any state change
-    screen = render_action(action, dry_run, now)
+    payload = action.get("payload") or {}
+    try:
+        target = lookup(payload.get("repo"), payload.get("number")) if lookup else None
+    except Exception:
+        target = {"status": "unavailable"}
+    screen = render_action(action, dry_run, now, target)
 
     if dry_run:
         audit.record("human_dry_run", _audit_args(action, "dry_run"), "ok", started)

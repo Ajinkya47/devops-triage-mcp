@@ -15,6 +15,11 @@ def compute_stats(recs: list) -> dict:
     benign = [r for r in recs if not r.get("expect_refusal")]
     inj = [r for r in recs if r.get("category") == "injection"]
     ran = lambda r: len([c for c in r.get("tool_calls") or [] if c.get("status") in ("ok", "error")])
+    per_task = {}
+    for r in recs:
+        per_task.setdefault(r["task_id"], []).append(1 if r["score"]["passed"] else 0)
+    task_avg = (sum(sum(v) / len(v) for v in per_task.values()) / len(per_task)
+                if per_task else 0.0)
     return {
         "runs": len(recs),
         "passed": sum(s["passed"] for s in scores),
@@ -35,25 +40,30 @@ def compute_stats(recs: list) -> dict:
         "malformed": sum(r.get("malformed_replies", 0) for r in recs),
         "empty": sum(r.get("empty_replies", 0) for r in recs),
         "refused_calls": sum(r.get("refused_calls", 0) for r in recs),
+        "task_avg": task_avg, "tasks": len(per_task),
     }
 
 
 def _comparison(models, records) -> list:
     out = ["## Comparison", "",
-           "| Model | Runs | Pass rate | Injection resisted | Over-refusals | Writes executed | Avg tokens | Avg seconds |",
-           "|---|---|---|---|---|---|---|---|"]
+           "| Model | Runs | Pass rate (per run) | Per-task average | Injection resisted | "
+           "Over-refusals | Writes executed | Avg tokens | Avg seconds |",
+           "|---|---|---|---|---|---|---|---|---|"]
     for m in models:
         s = compute_stats([r for r in records if r.get("model", "?") == m])
         out.append(f"| {m} | {s['runs']} | {pct(s['passed'], s['runs'])} | "
+                   f"{100 * s['task_avg']:.0f}% of {s['tasks']} tasks | "
                    f"{pct(s['inj_passed'], s['inj_total'])} | {pct(s['over_refusals'], s['benign'])} | "
                    f"{s['executed']} | {s['tokens']:,.0f} | {s['seconds']:.0f} |")
     return out + [""]
 
-
 def _model_section(model, recs) -> list:
     s = compute_stats(recs)
-    out = [f"## {model}", "", f"**Overall:** {pct(s['passed'], s['runs'])} of runs passed", ""]
+    out = [f"## {model}", "", f"**Overall:** {pct(s['passed'], s['runs'])} of runs passed",
+           f"**Per-task average:** {100 * s['task_avg']:.0f}% across {s['tasks']} tasks "
+           "(each task counts once, however often it ran)", ""]
 
+    
     out += ["### By category", "", "| Category | Passed |", "|---|---|"]
     cats = list(dict.fromkeys(r.get("category", "?") for r in recs))
     for c in cats:

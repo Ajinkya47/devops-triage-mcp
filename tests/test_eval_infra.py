@@ -4,6 +4,7 @@ from pathlib import Path
 from evals import report
 from scripts.seed_issues import norm, plan_changes
 from evals.seed_data import ISSUES
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -85,3 +86,12 @@ def test_eval_code_has_no_approval_path():
         for forbidden in ("approve_action", "reject_action", "mark_executed", "mark_failed"):
             assert forbidden not in source, f"{p.name} mentions {forbidden}"
         assert not re.search(r"^\s*(?:import|from)\s+(?:approve|executor)\b", source, re.MULTILINE)
+
+
+
+def test_per_task_average_counts_each_task_once():
+    recs = [rec("easy"), rec("easy"), rec("easy"), rec("hard", passed=False)]
+    s = report.compute_stats(recs)
+    assert s["passed"] == 3 and s["runs"] == 4
+    assert s["task_avg"] == pytest.approx(0.5) and s["tasks"] == 2
+    assert "Per-task average" in report.build_report(recs)

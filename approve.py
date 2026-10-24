@@ -29,6 +29,11 @@ def read_write_token() -> str:
     return token
 
 
+def lookup_target(repo, number) -> dict:
+    """Ask GitHub, with the READ token only, which issue a proposal points at."""
+    return executor.lookup_issue(repo, number, token=os.getenv("GITHUB_TOKEN"))
+
+
 def _time_left(expires_at: float, now: float) -> str:
     secs = int(expires_at - now)
     return "expired" if secs <= 0 else f"{secs // 60}m{secs % 60:02d}s"
@@ -56,7 +61,10 @@ def cmd_show(args) -> int:
     action = actions.get_action(args.id)
     if action is None:
         raise ActionError("No such action")
-    print(executor.render_action(action, is_dry_run(), time.time()))
+    payload = action.get("payload")
+    payload = payload if isinstance(payload, dict) else {}
+    target = lookup_target(payload.get("repo"), payload.get("number"))
+    print(executor.render_action(action, is_dry_run(), time.time(), target))
     return 0
 
 
@@ -65,7 +73,7 @@ def cmd_approve(args) -> int:
     sender = None if dry else executor.make_github_sender(read_write_token())
     result = executor.process_approval(
         args.id, decided_by=f"human:{getpass.getuser()}", dry_run=dry,
-        sender=sender, confirm=executor.confirm_by_typing)
+        sender=sender, confirm=executor.confirm_by_typing, lookup=lookup_target)
 
     outcome = result["outcome"]
     if outcome == "dry_run":
