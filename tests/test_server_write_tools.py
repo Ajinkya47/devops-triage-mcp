@@ -88,3 +88,8 @@ def test_writes_are_off_by_default(env, monkeypatch):
     monkeypatch.delenv("ASSIGNEES_ALLOWED")
     with pytest.raises(ValueError, match="disabled"):
         server.propose_comment(REPO, 1, "hello")
+
+def test_noisy_libraries_are_quiet():
+    import logging
+    assert logging.getLogger("mcp").level == logging.WARNING
+    assert logging.getLogger("httpx").level == logging.WARNING

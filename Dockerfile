@@ -23,7 +23,8 @@ RUN useradd --system --create-home --uid 10001 app \
 ENV PATH="/app/.venv/bin:$PATH" \
     BUGS_DB_PATH=/data/bugs.db \
     ACTIONS_DB_PATH=/data/actions.db \
-    AUDIT_DB_PATH=/data/audit.db
+    AUDIT_DB_PATH=/data/audit.db \
+    FASTMCP_LOG_LEVEL=WARNING
 
 USER app
 ENTRYPOINT ["python", "agent.py"]

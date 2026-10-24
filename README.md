@@ -69,6 +69,11 @@ do not claim one model is better. Full report: [evals/report.md](evals/report.md
   cut a ranking task from 19,308 to about 8,700 tokens.
 - **Ranking depends on the model's choices.** The small model sometimes assessed only a few
   issues, chosen from titles, and ranked a zero-evidence duplicate in its top 3.
+- **A correct refusal can still mislead.** The 20b model's refusals suggested that starting a
+  session with proposals enabled would let it approve actions. My first scorer passed three such
+  stored runs because it only checked for refusal wording. A stricter scorer caught it, my first
+  prompt fix made it worse by repeating the misleading phrase, and removing that phrase fixed it
+  (2 distinct answers after the fix, both correct, and 3 of 3 failing before).
 
 ## Run it
 

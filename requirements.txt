@@ -1,7 +1,0 @@
-mcp[cli]
-httpx
-python-dotenv
-pydantic
-sqlglot
-pytest
-openai        # use Groq through its OpenAI-compatible endpoint

@@ -22,7 +22,16 @@ from actions import ActionError
 from batch_assess import MAX_BATCH, assess_many
 
 load_dotenv()
+import logging
+
+
 mcp = FastMCP("devops-triage")
+
+for _name in ("mcp", "httpx"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
+
+
+
 
 GITHUB_API = "https://api.github.com"
 

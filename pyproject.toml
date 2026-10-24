@@ -5,12 +5,14 @@ description = "Secure MCP server and agent for triaging GitHub issues"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi>=0.162.0",
     "httpx>=0.28.1",
     "mcp[cli]<2",
     "openai>=3.24.0",
     "pydantic>=2.13.5",
     "python-dotenv>=1.2.4",
     "sqlglot>=30.21.0",
+    "uvicorn>=0.54.0",
 ]
 
 [tool.pytest.ini_options]
