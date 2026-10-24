@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -36,3 +36,19 @@ jobs:
             echo "Token-shaped string found"
             exit 1
           fi
+
+  docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build the image
+        run: docker build -t triage-mcp .
+
+      - name: The image starts
+        run: docker run --rm triage-mcp --help
+
+      - name: The image holds no approval code and no secrets
+        run: |
+          docker run --rm --entrypoint sh triage-mcp -c 'test ! -e approve.py && test ! -e executor.py && test ! -e .env && test ! -e .env.write && test ! -e bugs.db'
